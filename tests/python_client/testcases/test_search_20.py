@@ -285,6 +285,7 @@ class TestCollectionSearchInvalid(TestcaseBase):
                                          "err_msg": "metric type not found"})
 
     @pytest.mark.tags(CaseLabel.L2)
+    @pytest.mark.xfail(reason="issue 15409")
     @pytest.mark.parametrize("index, params",
                              zip(ct.all_index_types[:9],
                                  ct.default_index_params[:9]))
@@ -631,6 +632,7 @@ class TestCollectionSearchInvalid(TestcaseBase):
                                          "err_msg": "PartitonName: %s not found" % partition_name})
 
     @pytest.mark.tags(CaseLabel.L2)
+    @pytest.mark.xfail(reason="issue 15407")
     def test_search_param_invalid_binary(self):
         """
         target: test search within binary data (invalid parameter)
@@ -652,6 +654,7 @@ class TestCollectionSearchInvalid(TestcaseBase):
                                          "err_msg": "unsupported"})
 
     @pytest.mark.tags(CaseLabel.L2)
+    @pytest.mark.xfail(reason="issue 15407")
     def test_search_binary_flat_with_L2(self):
         """
         target: search binary collection using FlAT with L2
@@ -2061,7 +2064,124 @@ class TestCollectionSearch(TestcaseBase):
             assert math.isclose(dis_actual, dis_expect, rel_tol=0, abs_tol=abs_tol)
 
 
+"""
+******************************************************************
+#  The following cases are copied from test_search.py
+******************************************************************
+"""
+
+
+def init_data(connect, collection, start=0, nb=3000, partition_names=None, auto_id=True):
+    """
+    Generate entities and add it in collection
+    """
+    global entities
+    if nb == 3000:
+        insert_entities = entities
+    else:
+        insert_entities = gen_entities(nb, start=start, is_normal=True)
+    if partition_names is None:
+        res = connect.insert(collection, insert_entities)
+    else:
+        res = connect.insert(collection, insert_entities, partition_name=partition_names)
+    connect.flush([collection])
+    ids = res.primary_keys
+    return insert_entities, ids
+
+
+def init_binary_data(connect, collection, nb=3000, insert=True, partition_names=None):
+    """
+    Generate entities and add it in collection
+    """
+    ids = []
+    global binary_entities
+    global raw_vectors
+    if nb == 3000:
+        insert_entities = binary_entities
+        insert_raw_vectors = raw_vectors
+    else:
+        insert_raw_vectors, insert_entities = gen_binary_entities(nb)
+    if insert is True:
+        if partition_names is None:
+            res = connect.insert(collection, insert_entities)
+        else:
+            res = connect.insert(collection, insert_entities, partition_name=partition_names)
+        connect.flush([collection])
+        ids = res.primary_keys
+    return insert_raw_vectors, insert_entities, ids
+
+
+def check_id_result(result, id):
+    limit_in = 5
+    ids = [entity.id for entity in result]
+    if len(result) >= limit_in:
+        return id in ids[:limit_in]
+    else:
+        return id in ids
+
+
 class TestSearchBase(TestcaseBase):
+    """
+    generate valid create_index params
+    """
+
+    @pytest.fixture(
+        scope="function",
+        params=gen_index()
+    )
+    def get_index(self, request, connect):
+        # if str(connect._cmd("mode")) == "CPU":
+        #     if request.param["index_type"] in index_cpu_not_support():
+        #         pytest.skip("sq8h not support in CPU mode")
+        return request.param
+
+    @pytest.fixture(
+        scope="function",
+        params=cf.gen_simple_index()
+    )
+    def get_simple_index(self, request, connect):
+        # if str(connect._cmd("mode")) == "CPU":
+        #     if request.param["index_type"] in index_cpu_not_support():
+        #         pytest.skip("sq8h not support in CPU mode")
+        return copy.deepcopy(request.param)
+
+    @pytest.fixture(
+        scope="function",
+        params=gen_binary_index()
+    )
+    def get_jaccard_index(self, request, connect):
+        log.info(request.param)
+        if request.param["index_type"] in binary_support():
+            return request.param
+        # else:
+        #     pytest.skip("Skip index Temporary")
+
+    @pytest.fixture(
+        scope="function",
+        params=gen_binary_index()
+    )
+    def get_hamming_index(self, request, connect):
+        log.info(request.param)
+        if request.param["index_type"] in binary_support():
+            return request.param
+        # else:
+        #     pytest.skip("Skip index Temporary")
+
+    @pytest.fixture(
+        scope="function",
+        params=gen_binary_index()
+    )
+    def get_structure_index(self, request, connect):
+        log.info(request.param)
+        if request.param["index_type"] == "FLAT":
+            return request.param
+        # else:
+        #     pytest.skip("Skip index Temporary")
+
+    """
+    generate top-k params
+    """
+
     @pytest.fixture(
         scope="function",
         params=[1, 10]
